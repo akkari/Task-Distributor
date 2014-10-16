@@ -8,7 +8,7 @@ try:
     import tkSimpleDialog
     import tkMessageBox
 except ImportError:
-    pass
+    print 'No Tkinter support on your system.'
 import os
 import thread
 import socket
@@ -21,7 +21,7 @@ import getopt
 import re
 import tarfile
 
-class MyApp:
+class Distributor:
     def __init__(self, parent=None, mode='gui'):
         """ Set some useful constants and the mode of the run, which defaults to 'gui'.
         When in 'gui' mode, all the GUI widgets needed will be initialized. When in 'cmd_line'
@@ -68,8 +68,8 @@ class MyApp:
             self.l_host = Label(self.host_frame, text='Specify the hosts you want to connect to.', justify=LEFT)
             self.hosts = Listbox(self.host_frame, bg='white')
             self.host = Entry(self.host_frame)
-            self.host.bind('<Return>', lambda event: self.add_host_e(event, self.host.get()))
-            self.b_add_host = Button(self.host_frame, text='add', command=lambda :self.add_host(self.host.get()))
+            self.host.bind('<Return>', lambda event: self.add_host(event, self.host.get()))
+            self.b_add_host = Button(self.host_frame, text='add', command=lambda : self.add_host(None, self.host.get()))
             self.b_edit = Button(self.host_frame, text='edit', command=self.edit)
             self.b_delete_host = Button(self.host_frame, text='delete', command=lambda :self.delete('host'))
             self.b_clear_host = Button(self.host_frame, text='clear', command=lambda :self.clear('host'))
@@ -121,22 +121,14 @@ class MyApp:
 
 
 
-    def add_host(self, host):
+    def add_host(self, event, host):
         if host:
-            host = host if re.search(r'^\w+\:[1-9]\d*$', x) else '%s:%s' % (host, self.client_listen_port)
+            host = host if re.search(r'^\w+\:[1-9]\d*$', host) else '%s:%s' % (host, self.client_listen_port)
             if host not in self.hosts.get(0, END):
                 self.hosts.insert(END, host)
             else:
                 tkMessageBox.showwarning('Warning', 'Host "%s" already added.' % self.host.get())
             self.host.select_range(0, END)
-    def add_host_e(self, event, host):
-        if host:
-            if host not in self.hosts.get(0, END):
-                self.hosts.insert(END, host)
-            else:
-                tkMessageBox.showwarning('Warning', 'Host "%s" already added.' % self.host.get())
-            self.host.select_range(0, END)
-
 
     def edit(self):
         if self.hosts.curselection():
@@ -593,15 +585,15 @@ def main():
             rename = True
     if mode == 'gui':
         root = Tk()
-        myapp = MyApp(root)
-        myapp.configure(hosts, files, template, rename)
+        distributor = Distributor(root)
+        distributor.configure(hosts, files, template, rename)
         if direct:
             myapp.start()
         root.mainloop()
     elif mode == 'cmd_line':
-        myapp = MyApp(mode='cmd_line')
-        myapp.configure(hosts, files, template, rename)
-        myapp.start()
+        distributor = Distributor(mode='cmd_line')
+        distributor.configure(hosts, files, template, rename)
+        distributor.start()
         for mutex in myapp.exit_mutexes:
             while not mutex.locked(): pass
         print 'Program terminated.'
