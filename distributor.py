@@ -160,7 +160,7 @@ class Distributor:
                 if not os.path.exists(f):
                     bad_files.append(f)
             if bad_files:
-                print  'File \n%s\ncan not be found.' % '\n'.join(bad_files)
+                print 'File \n%s\ncan not be found.' % '\n'.join(bad_files)
                 return False
             else:
                 return True

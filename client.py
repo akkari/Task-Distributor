@@ -50,7 +50,14 @@ def path_filter(directory, pattern, type):
     file_names = filter(os.path.isfile, [os.path.join(directory, x) for x in os.listdir(directory)])
     file_names = [os.path.split(x)[-1] for x in file_names]
     if type == 'wc':
-        return fnmatch.filter(file_names, pattern)
+        if '{' in pattern and '}' in pattern:
+            pattern = pattern.replace('{', '')
+            pattern = pattern.replace('}', '')
+        patterns = pattern.split(',')
+        result = []
+        for p in patterns:
+            result.extend(fnmatch.filter(file_names, pattern))
+        return result
     elif type == 're':
         pattern = fnmatch.translate(pattern)
         re_obj = re.compile(pattern)
