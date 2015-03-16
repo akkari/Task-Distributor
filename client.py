@@ -56,7 +56,7 @@ def path_filter(directory, pattern, type):
         patterns = pattern.split(',')
         result = []
         for p in patterns:
-            result.extend(fnmatch.filter(file_names, pattern))
+            result.extend(fnmatch.filter(file_names, p.strip()))
         return result
     elif type == 're':
         pattern = fnmatch.translate(pattern)
