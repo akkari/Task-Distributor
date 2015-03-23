@@ -64,6 +64,9 @@ class host_handler(threading.Thread):
         os.system(cmd)
 
     def run(self):
+    # Do nothing if no files to be distributed.
+        if self.sub_system == None:
+            return
     # compress files
         i, o = self.sub_system
         self.compress(i, o)
@@ -109,9 +112,9 @@ class Distributor:
             self.copy_files()
             self.pack_files()
             self.host_threads = []
-            incoming_socks = [None] * len(self.hosts)
+            incoming_socks = [None] * min(len(self.files), len(self.hosts))
             thread_lock = threading.Lock()
-            for i in xrange(len(self.hosts)):
+            for i in xrange(len(incoming_socks)):
                 thread = host_handler(i+1, self.hosts[i], self.sub_systems[i], incoming_socks, thread_lock)
                 thread.start()
                 self.host_threads.append(thread)
@@ -211,6 +214,9 @@ class Distributor:
         self.sub_systems = []
         for sys_no in xrange(1, 1+n_sys):
             sub_system_numbers = [file_numbers[x] for x in xrange(sys_no-1, len(file_numbers), n_sys)]
+            if sub_system_numbers == []:
+                self.sub_systems.append(None)
+                break
             pattern = '|'.join( "\D%s\.\w+$|^%s\.\w+$" % (x,x) for x in sub_system_numbers)
             sub_filenames = filter(lambda x: re.search(pattern, x), file_names)
 
