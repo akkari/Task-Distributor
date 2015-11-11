@@ -21,7 +21,7 @@ except ImportError:
     import xml.etree.ElementTree as ET
 
 
-class host_handler(threading.Thread):
+class task_handler(threading.Thread):
 # Communication Codes
     CHECK_ALIVE = 1
     SEND_FILE = 2
@@ -110,12 +110,12 @@ class Distributor:
     def start(self):
         if self.check_files() and self.check_hosts() and self.check_template():
             self.copy_files()
-            self.pack_files()
+            self.assign_tasks()
             self.host_threads = []
             incoming_socks = [None] * min(len(self.files), len(self.hosts))
             thread_lock = threading.Lock()
             for i in xrange(len(incoming_socks)):
-                thread = host_handler(i+1, self.hosts[i], self.sub_systems[i], incoming_socks, thread_lock)
+                thread = task_handler(i + 1, self.hosts[i], self.sub_systems[i], incoming_socks, thread_lock)
                 thread.start()
                 self.host_threads.append(thread)
             #Listen for results
@@ -196,7 +196,7 @@ class Distributor:
         for src, dst in itertools.izip(old_file_names, new_file_names):
             shutil.copyfile(src, dst)
 
-    def pack_files(self):
+    def assign_tasks(self):
         n_sys = len(self.hosts)
         template_name = self.template
 
