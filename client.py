@@ -70,7 +70,7 @@ def now():
     return '%s.%s.%s_%s.%s.%s' % t
 
 def process(target_dir, addr):
-    decompress = 'tar xzf %s/in.tgz -C %s' % (target_dir, target_dir)
+    decompress = 'tar xf %s/in.tar -C %s' % (target_dir, target_dir)
     os.system(decompress)
 
     task_file = glob.glob('%s/*.xml' % target_dir)[0]
@@ -107,11 +107,27 @@ def process(target_dir, addr):
 
 
     files_to_gather = path_filter(target_dir, result_pattern, result_pattern_type)
-    tar_cmd = 'tar zcf %s -C %s %s' % ('%s/out.tgz' % target_dir, target_dir,  ' '.join(files_to_gather))
-    os.system(tar_cmd)
+    files_to_gather = [os.path.join(target_dir, filename) for filename in files_to_gather]
+    compress(files_to_gather, os.path.join(target_dir, 'out.tar'))
 
 
-    send_file('%s/out.tgz' % (target_dir,), addr, server_port, task_no)
+    send_file('%s/out.tar' % (target_dir,), addr, server_port, task_no)
+
+def compress(i, o):
+    CMD_LENGTH_LIMIT = 50000
+    directory = os.path.split(i[0])[0]
+    directory = directory if directory else '.'
+    left, right = 0, 0
+    while right < len(i):
+        right = min(left + 1000, len(i))
+        filenames = ' '.join(os.path.split(x)[-1] for x in i[left:right])
+        cmd = 'tar f %s --append --directory=%s %s' % (o, directory, filenames)
+        while len(cmd) > CMD_LENGTH_LIMIT:
+            right -= 1
+            filenames = ' '.join(os.path.split(x)[-1] for x in i[left:right])
+            cmd = 'tar f %s --append --directory=%s %s' % (o, directory, filenames)
+        os.system(cmd)
+        left = right
 
 def recv_file(incoming_sock, target_dir, file_name):
     incoming_sock.send(struct.pack('I', READY_2_RECV))
@@ -151,7 +167,7 @@ def main():
             incoming_sock.send(struct.pack('I', ALIVE))
         elif data == SEND_FILE:
             cur_time = now()
-            recv_file(incoming_sock, cur_time, 'in.tgz')
+            recv_file(incoming_sock, cur_time, 'in.tar')
             thread.start_new_thread(process, (cur_time, incoming_addr[0]))
         incoming_sock.close()
 

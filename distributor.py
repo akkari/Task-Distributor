@@ -32,7 +32,7 @@ class task_handler(threading.Thread):
         self.host = task_config['host']
         self.template = task_config['template']
         self.files_to_compress = task_config['files_to_compress']
-        self.tgz_file = task_config['tgz_file']
+        self.tar_file = task_config['tar_file']
         self.xml_tag = task_config['xml_tag']
         self.incoming_socks = incoming_socks
         self.lock = thread_lock
@@ -59,11 +59,21 @@ class task_handler(threading.Thread):
 
 
     def compress(self, i, o):
-        filenames = ' '.join(os.path.split(x)[-1] for x in i)
+        CMD_LENGTH_LIMIT = 50000
         directory = os.path.split(i[0])[0]
         directory = directory if directory else '.'
-        cmd = 'tar zcf %s --directory=%s %s' % (o, directory, filenames)
-        os.system(cmd)
+        left, right = 0, 0
+        while right < len(i):
+            right = min(left + 1000, len(i))
+            filenames = ' '.join(os.path.split(x)[-1] for x in i[left:right])
+            cmd = 'tar f %s --append --directory=%s %s' % (o, directory, filenames)
+            while len(cmd) > CMD_LENGTH_LIMIT:
+                right -= 1
+                filenames = ' '.join(os.path.split(x)[-1] for x in i[left:right])
+                cmd = 'tar f %s --append --directory=%s %s' % (o, directory, filenames)
+            os.system(cmd)
+            left = right
+
 
     def generate_xml(self):
     # generate xml
@@ -83,11 +93,11 @@ class task_handler(threading.Thread):
     # Generate xml file.
         self.generate_xml()
     # compress files
-        self.compress(self.files_to_compress, self.tgz_file)
+        self.compress(self.files_to_compress, self.tar_file)
     # send files
         host, port = self.host.split(':')
         port = int(port, base=10)
-        self.send_file(os.path.join('to_be_distributed', 'task-%d.tgz' % (self.task_no,)), host, port)
+        self.send_file(os.path.join('to_be_distributed', 'task-%d.tar' % (self.task_no,)), host, port)
     # wait for reply
         while True:
             with self.lock:
@@ -96,10 +106,10 @@ class task_handler(threading.Thread):
                     break
         data = struct.unpack('I', incoming_sock.recv(4))[0]
         if data == self.SEND_FILE:
-            self.recv_file(incoming_sock, 'files_gathered', '.'.join(['out' + str(self.task_no), 'tgz']))
+            self.recv_file(incoming_sock, 'files_gathered', '.'.join(['out' + str(self.task_no), 'tar']))
             incoming_sock.close()
 
-        in_tar = tarfile.open('files_gathered/out%d.tgz' % self.task_no, 'r')
+        in_tar = tarfile.open('files_gathered/out%d.tar' % self.task_no, 'r')
         in_tar.extractall('.')
         in_tar.close()
 
@@ -248,7 +258,7 @@ class Distributor:
 
             task_config['files_to_compress'] += ['task%d.xml' % (task_no + 1)]
             task_config['files_to_compress'] = [os.path.join('to_be_distributed', x) for x in task_config['files_to_compress']]
-            task_config['tgz_file'] = "to_be_distributed/task-%d.tgz" % (task_no + 1)
+            task_config['tar_file'] = "to_be_distributed/task-%d.tar" % (task_no + 1)
 
             xml_tag = {}
             xml_tag['port'] = str(self.port)
