@@ -8,7 +8,6 @@ import socket
 import itertools
 import shutil
 import time
-import Queue
 import sys
 import getopt
 import re
@@ -28,10 +27,13 @@ class task_handler(threading.Thread):
     ALIVE = 3
     READY_2_RECV = 4
 
-    def __init__(self, host_no, host, sub_system, incoming_socks, thread_lock):
-        self.host_no = host_no
-        self.host = host
-        self.sub_system = sub_system
+    def __init__(self, task_config, incoming_socks, thread_lock):
+        self.task_no = task_config['task_no']
+        self.host = task_config['host']
+        self.template = task_config['template']
+        self.files_to_compress = task_config['files_to_compress']
+        self.tgz_file = task_config['tgz_file']
+        self.xml_tag = task_config['xml_tag']
         self.incoming_socks = incoming_socks
         self.lock = thread_lock
         threading.Thread.__init__(self)
@@ -63,29 +65,41 @@ class task_handler(threading.Thread):
         cmd = 'tar zcf %s --directory=%s %s' % (o, directory, filenames)
         os.system(cmd)
 
+    def generate_xml(self):
+    # generate xml
+        tree = ET.parse(self.template)
+        task = tree.getroot()
+        for key, value in self.xml_tag.items():
+            tag = ET.SubElement(task, key)
+            tag.text = str(value)
+        xml_text = ET.tostring(task)
+        with open('to_be_distributed/task%s.xml' % self.task_no, 'w') as f:
+            f.write(xml_text)
+
     def run(self):
     # Do nothing if no files to be distributed.
-        if self.sub_system == None:
+        if not self.files_to_compress:
             return
+    # Generate xml file.
+        self.generate_xml()
     # compress files
-        i, o = self.sub_system
-        self.compress(i, o)
+        self.compress(self.files_to_compress, self.tgz_file)
     # send files
         host, port = self.host.split(':')
         port = int(port, base=10)
-        self.send_file(os.path.join('to_be_distributed', 'sys-%d.tar.gz' % (self.host_no,)), host, port)
+        self.send_file(os.path.join('to_be_distributed', 'task-%d.tgz' % (self.task_no,)), host, port)
     # wait for reply
         while True:
             with self.lock:
-                if self.incoming_socks[self.host_no-1]:
-                    incoming_sock = self.incoming_socks[self.host_no-1]
+                if self.incoming_socks[self.task_no-1]:
+                    incoming_sock = self.incoming_socks[self.task_no - 1]
                     break
         data = struct.unpack('I', incoming_sock.recv(4))[0]
         if data == self.SEND_FILE:
-            self.recv_file(incoming_sock, 'files_gathered', '.'.join(['out'+str(self.host_no), 'tar', 'gz']))
+            self.recv_file(incoming_sock, 'files_gathered', '.'.join(['out' + str(self.task_no), 'tgz']))
             incoming_sock.close()
 
-        in_tar = tarfile.open('files_gathered/out%d.tar.gz' % self.host_no, 'r')
+        in_tar = tarfile.open('files_gathered/out%d.tgz' % self.task_no, 'r')
         in_tar.extractall('.')
         in_tar.close()
 
@@ -98,7 +112,7 @@ class Distributor:
     SEND_FILE = 2
     ALIVE = 3
     READY_2_RECV = 4
-    def __init__(self, hosts, files, template, port):
+    def __init__(self, hosts, files, template, port, sort_names=False):
         self.hosts = [ x if re.search(r'^.+\:[1-9]\d*$', x) else '%s:%s' % (x, self.default_client_listen_port) for x in hosts ]
         self.files = files
         self.template = template
@@ -106,6 +120,7 @@ class Distributor:
             self.port = int(port)
         else:
             self.port = self.default_server_listen_port
+        self.sort_names = sort_names
 
     def start(self):
         if self.check_files() and self.check_hosts() and self.check_template():
@@ -115,7 +130,7 @@ class Distributor:
             incoming_socks = [None] * min(len(self.files), len(self.hosts))
             thread_lock = threading.Lock()
             for i in xrange(len(incoming_socks)):
-                thread = task_handler(i + 1, self.hosts[i], self.sub_systems[i], incoming_socks, thread_lock)
+                thread = task_handler(self.task_configs[i], incoming_socks, thread_lock)
                 thread.start()
                 self.host_threads.append(thread)
             #Listen for results
@@ -124,8 +139,8 @@ class Distributor:
             sock.listen(10)
             while not all(incoming_socks):
                 incoming_sock, incoming_addr = sock.accept()
-                sys_no = struct.unpack('I', (incoming_sock.recv(4)))[0]
-                incoming_socks[sys_no-1] = incoming_sock
+                task_no = struct.unpack('I', (incoming_sock.recv(4)))[0]
+                incoming_socks[task_no-1] = incoming_sock
 
         else:
             sys.exit(1)
@@ -197,49 +212,53 @@ class Distributor:
             shutil.copyfile(src, dst)
 
     def assign_tasks(self):
-        n_sys = len(self.hosts)
-        template_name = self.template
+        n_tasks = len(self.hosts)
 
         file_names = map(lambda x: os.path.split(x)[-1], self.files) # file names without preceding path
         pattern = r'([0-9]+)\.'
-        file_names.sort(key = lambda x: int(re.findall(pattern, x)[-1])) # Sort file names by their numbers.
-        file_numbers = [] # Extract the number of files to a list.
+        if self.sort_names:
+            file_names.sort(key = lambda x: int(re.findall(pattern, x)[-1])) # Sort file names by the value of their numbers.
+
+        # Determine the number of types of files.
+        suffix_no = 0
+        pre_number = re.findall(pattern, file_names[0])[-1]
         for name in file_names:
-            number = re.findall(pattern, name)[-1]
-            if number not in file_numbers:
-                file_numbers.append(number)
+            cur_number = re.findall(pattern, name)[-1]
+            if cur_number != pre_number:
+                break
+            suffix_no += 1
+            pre_number = cur_number
+
+        # Extract the number of files to a list.
+        file_numbers = [re.findall(pattern, file_names[x])[-1] for x in xrange(0, len(file_names), suffix_no)]
+
         pattern = r'(.*\D)\d+\.'
         pure_name = re.search(pattern, file_names[0]).groups()[0]
 
-        self.sub_systems = []
-        for sys_no in xrange(1, 1+n_sys):
-            sub_system_numbers = [file_numbers[x] for x in xrange(sys_no-1, len(file_numbers), n_sys)]
-            if sub_system_numbers == []:
-                self.sub_systems.append(None)
-                break
-            pattern = '|'.join( "\D%s\.\w+$|^%s\.\w+$" % (x,x) for x in sub_system_numbers)
-            sub_filenames = filter(lambda x: re.search(pattern, x), file_names)
+        self.task_configs = []
+        for task_no in xrange(n_tasks):
+            task_config = {}
+            task_config['task_no'] = task_no + 1
+            task_config['host'] = self.hosts[task_no]
+            task_config['template'] = self.template
 
-        # generate xml
-            tree = ET.parse(template_name)
-            task = tree.getroot()
-            tag_port = ET.SubElement(task, "port")
-            tag_port.text = str(self.port)
-            tag_filename = ET.SubElement(task, "filename")
-            tag_filename.text = pure_name
-            tag_host_no = ET.SubElement(task, "host_no")
-            tag_host_no.text = str(sys_no)
-            tag_sub_sys_numbers = ET.SubElement(task, "sub_sys_numbers")
-            tag_sub_sys_numbers.text = ' '.join(map(str, sub_system_numbers))
-            xml_text = ET.tostring(task)
-            with open('to_be_distributed/task%s.xml' % sys_no, 'w') as f:
-                f.write(xml_text)
+            task_config['files_to_compress'] = []
+            for _x in xrange(task_no * suffix_no, len(file_names), n_tasks * suffix_no):
+                task_config['files_to_compress'].extend([file_names[_x+i] for i in xrange(suffix_no)])
 
-        # pack files
-            ins = sub_filenames + ['task%d.xml' % sys_no]
-            ins = [ os.path.join('to_be_distributed', x) for x in ins ]
-            out = os.path.join('to_be_distributed', 'sys-%d.tar.gz' % sys_no)
-            self.sub_systems.append((ins, out))
+            task_config['files_to_compress'] += ['task%d.xml' % (task_no + 1)]
+            task_config['files_to_compress'] = [os.path.join('to_be_distributed', x) for x in task_config['files_to_compress']]
+            task_config['tgz_file'] = "to_be_distributed/task-%d.tgz" % (task_no + 1)
+
+            xml_tag = {}
+            xml_tag['port'] = str(self.port)
+            xml_tag['pure_name'] = pure_name
+            xml_tag['task_no'] = str(task_no + 1)
+            xml_tag['file_numbers'] = ' '.join(file_numbers[_x] for _x in xrange(task_no, len(file_numbers), n_tasks))
+            task_config['xml_tag'] = xml_tag
+
+            self.task_configs.append(task_config)
+
 
     def configure(self, hosts=None, files=None, template=None, port=None):
         if hosts:
@@ -255,6 +274,7 @@ class Distributor:
 def main():
     hosts, files, template = ['']*3
     port = None
+    sort_names = False
 
     opts, args = getopt.getopt(sys.argv[1:], 'f:F:h:H:t:p:')
     for opt, arg in opts:
@@ -272,8 +292,10 @@ def main():
                 hosts = map(lambda x: x.strip(), f.readlines())
         elif opt == '-t':
             template = arg
+        elif opt == '-s':
+            sort_names = True
 
-    distributor = Distributor(hosts, files, template, port)
+    distributor = Distributor(hosts, files, template, port, sort_names)
     distributor.start()
     while True:
         if all( not x.is_alive() for x in distributor.host_threads ):

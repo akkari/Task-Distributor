@@ -70,12 +70,12 @@ def now():
     return '%s.%s.%s_%s.%s.%s' % t
 
 def process(target_dir, addr):
-    decompress = 'tar xzf %s/in.tar.gz -C %s' % (target_dir, target_dir)
+    decompress = 'tar xzf %s/in.tgz -C %s' % (target_dir, target_dir)
     os.system(decompress)
 
     task_file = glob.glob('%s/*.xml' % target_dir)[0]
     task = ET.ElementTree(file=task_file)
-    for elem in task.getiterator():
+    for elem in task.iter():
         if elem.tag == 'command':
             cmd_template = elem.text
         elif elem.tag == 'result':
@@ -83,20 +83,20 @@ def process(target_dir, addr):
             result_pattern_type = elem.attrib['type']
         elif elem.tag == 'np':
             np = int(elem.text)
-        elif elem.tag == 'host_no':
-            host_no = int(elem.text)
-        elif elem.tag == 'filename':
-            filename = elem.text
+        elif elem.tag == 'task_no':
+            task_no = int(elem.text)
+        elif elem.tag == 'pure_name':
+            pure_name = elem.text
         elif elem.tag == 'port':
             server_port = int(elem.text)
-        elif elem.tag == 'sub_sys_numbers':
-            sub_sys_numbers = elem.text.split()
+        elif elem.tag == 'file_numbers':
+            file_numbers = elem.text.split()
 
     thread_lock = threading.Lock()
     index = 0
-    while index < len(sub_sys_numbers):
+    while index < len(file_numbers):
         if multi_task.threads_alive < np:
-            cmd = cmd_template % {'name': filename+sub_sys_numbers[index]}
+            cmd = cmd_template % {'name': pure_name + file_numbers[index]}
             task_thread = multi_task(cmd, target_dir, thread_lock)
             task_thread.start()
             index += 1
@@ -107,11 +107,11 @@ def process(target_dir, addr):
 
 
     files_to_gather = path_filter(target_dir, result_pattern, result_pattern_type)
-    tar_cmd = 'tar zcf %s -C %s %s' % ('%s/out.tar.gz' % target_dir, target_dir,  ' '.join(files_to_gather))
+    tar_cmd = 'tar zcf %s -C %s %s' % ('%s/out.tgz' % target_dir, target_dir,  ' '.join(files_to_gather))
     os.system(tar_cmd)
 
 
-    send_file('%s/out.tar.gz' % (target_dir,), addr, server_port, host_no)
+    send_file('%s/out.tgz' % (target_dir,), addr, server_port, task_no)
 
 def recv_file(incoming_sock, target_dir, file_name):
     incoming_sock.send(struct.pack('I', READY_2_RECV))
@@ -151,7 +151,7 @@ def main():
             incoming_sock.send(struct.pack('I', ALIVE))
         elif data == SEND_FILE:
             cur_time = now()
-            recv_file(incoming_sock, cur_time, 'in.tar.gz')
+            recv_file(incoming_sock, cur_time, 'in.tgz')
             thread.start_new_thread(process, (cur_time, incoming_addr[0]))
         incoming_sock.close()
 
