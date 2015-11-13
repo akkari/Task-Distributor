@@ -11,7 +11,6 @@ import time
 import sys
 import getopt
 import re
-import tarfile
 from contextlib import closing
 import struct
 try:
@@ -109,9 +108,8 @@ class task_handler(threading.Thread):
             self.recv_file(incoming_sock, 'files_gathered', '.'.join(['out' + str(self.task_no), 'tar']))
             incoming_sock.close()
 
-        in_tar = tarfile.open('files_gathered/out%d.tar' % self.task_no, 'r')
-        in_tar.extractall('.')
-        in_tar.close()
+        cmd = 'tar xf files_gathered/out%d.tar --warning=no-timestamp' % self.task_no
+        os.system(cmd)
 
 class Distributor:
 # Port numbers
