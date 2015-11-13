@@ -70,7 +70,7 @@ def now():
     return '%s.%s.%s_%s.%s.%s' % t
 
 def process(target_dir, addr):
-    decompress = 'tar xf %s/in.tar -C %s' % (target_dir, target_dir)
+    decompress = 'tar xf %s/in.tar --warning=no-timestamp -C %s' % (target_dir, target_dir)
     os.system(decompress)
 
     task_file = glob.glob('%s/*.xml' % target_dir)[0]
