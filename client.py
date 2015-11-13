@@ -75,7 +75,8 @@ def process(target_dir, addr):
 
     task_file = glob.glob('%s/*.xml' % target_dir)[0]
     task = ET.ElementTree(file=task_file)
-    for elem in task.iter():
+    iterator = task.iter() if hasattr(task, 'iter') else task.getiterator()
+    for elem in iterator:
         if elem.tag == 'command':
             cmd_template = elem.text
         elif elem.tag == 'result':
