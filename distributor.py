@@ -132,8 +132,18 @@ class Distributor:
 
     def start(self):
         if self.check_files() and self.check_hosts() and self.check_template():
+            # Establish a socket and bind it to the designated port.
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.bind(('', self.port))
+                sock.listen(10)
+            except socket.error:
+                print "Port %s already in use." % self.port
+                sys.exit(1)
+
             self.copy_files()
             self.assign_tasks()
+
             self.host_threads = []
             incoming_socks = [None] * min(len(self.files), len(self.hosts))
             thread_lock = threading.Lock()
@@ -141,10 +151,8 @@ class Distributor:
                 thread = task_handler(self.task_configs[i], incoming_socks, thread_lock)
                 thread.start()
                 self.host_threads.append(thread)
+
             #Listen for results
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.bind(('', self.port))
-            sock.listen(10)
             while not all(incoming_socks):
                 incoming_sock, incoming_addr = sock.accept()
                 task_no = struct.unpack('I', (incoming_sock.recv(4)))[0]
