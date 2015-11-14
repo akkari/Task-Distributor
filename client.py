@@ -130,9 +130,9 @@ def compress(i, o):
         os.system(cmd)
         left = right
 
+
 def recv_file(incoming_sock, target_dir, file_name):
     incoming_sock.send(struct.pack('I', READY_2_RECV))
-    os.mkdir(target_dir)
     with closing(incoming_sock.makefile('r')) as f_in_socket:
         with open(os.path.join(target_dir, file_name), 'wb') as f_out_to_disk:
             shutil.copyfileobj(f_in_socket, f_out_to_disk)
@@ -148,6 +148,18 @@ def send_file(file_name, host, port, host_no):
         with closing(sock.makefile('w')) as f_out_socket:
             with open(file_name, 'rb') as f_in_from_disk:
                 shutil.copyfileobj(f_in_from_disk, f_out_socket)
+
+
+def mkdir(cur_time):
+    # Check whether the designated directory exists before trying to create it to avoid collision.
+    i = 1
+    target_dir = "%s_%s" % (cur_time, i)
+    while os.path.exists(target_dir):
+        i += 1
+        target_dir = "%s_%s" % (cur_time, i)
+    os.mkdir(target_dir)
+    return target_dir
+
 
 def main():
     args = sys.argv
@@ -167,9 +179,9 @@ def main():
         if data == CHECK_ALIVE:
             incoming_sock.send(struct.pack('I', ALIVE))
         elif data == SEND_FILE:
-            cur_time = now()
-            recv_file(incoming_sock, cur_time, 'in.tar')
-            thread.start_new_thread(process, (cur_time, incoming_addr[0]))
+            target_dir = mkdir(now())
+            recv_file(incoming_sock, target_dir, 'in.tar')
+            thread.start_new_thread(process, (target_dir, incoming_addr[0]))
         incoming_sock.close()
 
 if __name__=="__main__":main()
